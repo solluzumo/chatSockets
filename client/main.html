@@ -2,43 +2,324 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>WebSocket Client</title>
+    <title>WebSocket Chat Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            width: 150px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #messages {
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            background-color: #f9f9f9;
+            font-family: monospace;
+        }
+        .message {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .message .username {
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .message .timestamp {
+            color: #999;
+            font-size: 0.8em;
+        }
+        .system-message {
+            color: #666;
+            font-style: italic;
+            padding: 3px 0;
+        }
+        #connectionStatus {
+            margin: 10px 0;
+            font-weight: bold;
+            color: #666;
+        }
+        .status-connected { color: green; }
+        .status-error { color: red; }
+        .status-loading { color: #ff9800; }
+    </style>
 </head>
 <body>
-    <h2>WebSocket Client</h2>
-    <input type="text" id="messageInput" placeholder="Enter message" />
-    <input type="text" id="userNameInput" placeholder="Enter username" />
-    <button onclick="sendMessage()">Send</button>
+    <h2>WebSocket Chat Client</h2>
+    
+    <div class="input-group">
+        <label for="chatId">Chat ID:</label>
+        <input type="text" id="chatId" placeholder="Enter chat ID" value="1" />
+        
+        <label for="limitValue">Limit:</label>
+        <input type="number" id="limitValue" placeholder="Limit" value="50" min="1" max="100" />
+        
+        <button onclick="connectToChat()">Connect to Chat</button>
+    </div>
+    
+    <div class="input-group">
+        <input type="text" id="userNameInput" placeholder="Username" value="User" />
+        <input type="text" id="messageInput" placeholder="Type message..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    
+    <div id="connectionStatus" class="status-error">Status: Not connected</div>
     <pre id="messages"></pre>
 
     <script>
-        let socket = new WebSocket("ws://localhost:8080/ws");
+        let socket = null;
+        let currentChatId = null;
+        
+        function updateStatus(message, type = 'error') {
+            const statusEl = document.getElementById("connectionStatus");
+            statusEl.textContent = "Status: " + message;
+            statusEl.className = type === 'connected' ? 'status-connected' : 
+                               type === 'loading' ? 'status-loading' : 'status-error';
+        }
+        
+        function connectToChat() {
+            const chatId = document.getElementById("chatId").value.trim();
+            const limit = document.getElementById("limitValue").value;
+            
+            if (!chatId) {
+                alert("Please enter a chat ID");
+                return;
+            }
+            
+            currentChatId = chatId;
+            document.getElementById("messages").innerHTML = "";
+            updateStatus(`Connecting to chat ${chatId}...`, 'loading');
+            
+            // Открываем WebSocket
+            openWebSocketConnection(chatId);
+            
+            // Загружаем историю и отображаем сообщения
+            loadChatHistory(chatId, limit)
+                .then(data => {
+                    // Извлекаем массив сообщений из ответа
+                    const messages = data.messages || [];
+                    
+                    if (messages.length > 0) {
+                        addSystemMessage(`✓ Loaded ${messages.length} messages from history`);
+                        displayMessages(messages);
+                    } else {
+                        addSystemMessage(`ℹ️ No messages in chat history`);
+                    }
+                })
+                .catch(error => {
+                    console.warn("Could not load chat history (chat may be new):", error);
+                    addSystemMessage(`ℹ️ Chat history unavailable — this might be a new chat. You can still send messages.`);
+                });
+        }
+        
+        function openWebSocketConnection(chatId) {
+            const token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJzdWIiOiIxIiwiZXhwIjoxNzcwNzMwNDI4LCJpYXQiOjE3NzA2NDQwMjh9.fuGFoCXCU-4mgTo7TgcP-YIOqyJCL9X__jy1qfeqbU7LMo7dyxG1U_P5XUdel2MYDtxnvB7zasuVy8Xh7DuSYJ9FE81oxd1GTBIw5KpEA_C_waGXK3yuN8VtRZikTBU0dHA724cNJ80LIoEkSrS8o03xPzD08emmvtuy2MTgwiK3wH0rMW1dIz-RC0VwwVSrXvu76j5MbxHRlGQU4P6Oc2JMIjKm04DL1Z-xvBtl53KiMwsJ-AoObIZb9PdpFl8Bg7ZwnGZFxdfKI7UwuPvfYgSBZc9yu5_9dsZNGuE29VDeZ38u2UcXbCTlQ209iICH-pA0Fz6C-sXQFbxLUsTyOw";
+            // Закрываем предыдущее соединение
+            if (socket) {
+                socket.close();
+            }
+            
+            socket = new WebSocket(
+                `ws://localhost:8080/chats/${chatId}/messages/?token=${encodeURIComponent(token)}`
+            );
+            socket.onopen = function() {
+                updateStatus(`Connected to chat #${chatId}`, 'connected');
+                addSystemMessage(`✓ Connected to chat #${chatId}. Ready to send messages.`);
+            };
+            
+            socket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    addMessage(data);
+                } catch (error) {
+                    console.error("Error parsing message:", error);
+                    addSystemMessage("Received: " + event.data);
+                }
+            };
+            
+          socket.onclose = function(event) {
+                let reason = event.reason || "No reason provided";
 
-        socket.onopen = function(event) {
-            document.getElementById("messages").textContent += "Connected to WebSocket server\n";
-        };
+                if (event.code === 1008) {
+                    // Policy Violation — чаще всего auth
+                    updateStatus("Authorization error", "error");
+                    addSystemMessage(`❌ Authorization failed: ${reason}`);
+                } else if (event.code === 1006) {
+                    updateStatus("Connection failed", "error");
+                    addSystemMessage("❌ Connection failed (server unreachable or rejected)");
+                } else {
+                    updateStatus(`Disconnected (code ${event.code})`, "error");
+                    addSystemMessage(`❌ Disconnected: ${reason} (code ${event.code})`);
+                }
 
-        socket.onmessage = function(event) {
-            document.getElementById("messages").textContent += "Received: " + event.data + "\n";
-        };
+                socket = null;
+            };
 
-        socket.onclose = function(event) {
-            document.getElementById("messages").textContent += "Disconnected from WebSocket server\n";
-        };
+            
+            socket.onerror = function() {
+                updateStatus("WebSocket error", "error");
+                addSystemMessage("❌ WebSocket error occurred");
+            };
 
+        }
+        
+        function loadChatHistory(chatId, limit) {
+            return fetch(`http://localhost:8080/chats/${chatId}?limit=${limit}`, {
+                headers: {
+                    "Authorization": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJzdWIiOiIxIiwiZXhwIjoxNzcwNzMwNDI4LCJpYXQiOjE3NzA2NDQwMjh9.fuGFoCXCU-4mgTo7TgcP-YIOqyJCL9X__jy1qfeqbU7LMo7dyxG1U_P5XUdel2MYDtxnvB7zasuVy8Xh7DuSYJ9FE81oxd1GTBIw5KpEA_C_waGXK3yuN8VtRZikTBU0dHA724cNJ80LIoEkSrS8o03xPzD08emmvtuy2MTgwiK3wH0rMW1dIz-RC0VwwVSrXvu76j5MbxHRlGQU4P6Oc2JMIjKm04DL1Z-xvBtl53KiMwsJ-AoObIZb9PdpFl8Bg7ZwnGZFxdfKI7UwuPvfYgSBZc9yu5_9dsZNGuE29VDeZ38u2UcXbCTlQ209iICH-pA0Fz6C-sXQFbxLUsTyOw"
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        addSystemMessage("❌ Unauthorized: please login");
+                        updateStatus("Unauthorized", "error");
+                        return { messages: [] };
+                    }
+                    if (response.status === 404) {
+                        addSystemMessage(`ℹ️ Chat #${chatId} has no history yet`);
+                        return { messages: [] };
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .catch(err => {
+                console.error(err);
+                addSystemMessage(`❌ Failed to load chat history: ${err.message}`);
+                return { messages: [] };
+            });
+        }
+
+        
+        function displayMessages(messages) {
+            const messagesContainer = document.getElementById("messages");
+            
+            // Маппинг новых полей сервера → клиент
+            const normalizedMessages = messages.map(msg => {
+                return {
+                    username: msg.user_name || 'Anonymous', // Теперь есть user_name!
+                    message: msg.text || '',
+                    timestamp: msg.created_at || new Date().toISOString()
+                };
+            });
+            
+            // Сортируем по времени
+            normalizedMessages.sort((a, b) => {
+                const timeA = new Date(a.timestamp).getTime();
+                const timeB = new Date(b.timestamp).getTime();
+                return timeA - timeB;
+            });
+            
+            normalizedMessages.forEach(msg => {
+                addMessage(msg);
+            });
+            
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function addMessage(data) {
+            const messagesContainer = document.getElementById("messages");
+            const messageDiv = document.createElement("div");
+            messageDiv.className = "message";
+            
+            const timestamp = new Date(data.timestamp).toLocaleString();
+            
+            messageDiv.innerHTML = `
+                <span class="username">${escapeHtml(data.username || 'Anonymous')}:</span>
+                <span class="message-text">${escapeHtml(data.message)}</span>
+                <span class="timestamp">(${timestamp})</span>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function addSystemMessage(text) {
+            const messagesContainer = document.getElementById("messages");
+            const messageDiv = document.createElement("div");
+            messageDiv.className = "message system-message";
+            messageDiv.textContent = text;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
         function sendMessage() {
-            let message = document.getElementById("messageInput").value;
-            let username = document.getElementById("userNameInput").value;
-
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                alert("Not connected to chat. Please click 'Connect to Chat' first.");
+                return;
+            }
+            
+            const message = document.getElementById("messageInput").value.trim();
+            const username = document.getElementById("userNameInput").value.trim();
+            
+            if (!message) {
+                alert("Please enter a message");
+                return;
+            }
+            
+            if (!username) {
+                alert("Please enter a username");
+                return;
+            }
+            
             const data = {
-                message: message,
+                text: message,
                 username: username,
-                timestamp: new Date().toISOString()
+                chatid: currentChatId
             };
             
             socket.send(JSON.stringify(data));
             document.getElementById("messageInput").value = "";
+            
+            // Оптимистичное отображение своего сообщения
+            addMessage(data);
         }
+        
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+        
+        // Отправка по Enter
+        document.getElementById("messageInput").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        });
+        
+        // Подключение к чату по умолчанию при загрузке (опционально)
+        // connectToChat();
     </script>
 </body>
 </html>

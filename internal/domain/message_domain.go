@@ -1,7 +1,12 @@
 package domain
 
+import "time"
+
 type MessageDomain struct {
-	ID       string
-	Text     string
-	UserName string
+	ID        int
+	Text      string
+	ChatID    int
+	UserID    int
+	UserName  string
+	CreatedAt time.Time
 }

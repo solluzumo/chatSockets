@@ -1,7 +1,7 @@
 package dto
 
 type MessageSendRequest struct {
-	Message   string `json:"message"`
-	UserName  string `json:"username"`
-	TimeStamp string `json:"timestamp"`
+	Text     string `json:"text"`
+	UserName string `json:"username"`
+	ChatID   string `json:"chatid"`
 }

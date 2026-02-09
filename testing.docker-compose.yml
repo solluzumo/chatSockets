@@ -1,0 +1,51 @@
+services:
+  messanger-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: messanger_user
+      POSTGRES_PASSWORD: messanger_password
+      POSTGRES_DB: messanger_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - messanger_pgdata:/var/lib/postgresql/data
+      
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U messanger_user -d messanger_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  messanger-service:
+    build:
+      context: .
+      dockerfile: DOCKERFILE
+    environment:
+      DATABASE_URL: postgres://messanger_user:messanger_password@messanger-postgres:5432/messanger_db?sslmode=disable
+      SERVICE_NAME : "messanger"
+      WORKERS_TIMER: 5
+      HTTP_PORT: "8080"
+      MCHANCAP: 10
+      MWORKERSCAP: 10
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+      JWT_ISSUER: auth-service
+    depends_on:
+      messanger-postgres:
+        condition:
+          service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keys:/run/secrets:ro
+      - ./logs/messanger:/var/logs/service
+    command: [
+      "/bin/sh", "-c",
+      "messanger-service 2>&1 | tee /var/logs/service/messanger-logs-out.log"
+    ]
+    networks: [backend]
+
+volumes:
+  messanger_pgdata:
+
+networks:
+  backend:

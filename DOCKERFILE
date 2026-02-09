@@ -1,0 +1,27 @@
+FROM golang:1.25.6 AS builder
+
+WORKDIR /app
+
+COPY migrations ./migrations
+
+COPY . .
+
+RUN go mod tidy
+RUN go mod download
+
+RUN go build -o /app/messanger-service ./cmd/main.go
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/messanger-service /bin/messanger-service
+
+# Копируем бинарник ИЗ builder-образа
+COPY --from=builder /app/messanger-service /bin/messanger-service
+
+# 👇 КОПИРУЕМ МИГРАЦИИ В ФИНАЛЬНЫЙ ОБРАЗ!
+COPY --from=builder /app/migrations ./migrations
+CMD [ "/bin/messanger-service" ]

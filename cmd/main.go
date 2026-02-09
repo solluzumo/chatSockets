@@ -2,57 +2,78 @@ package main
 
 import (
 	"chatsockets/internal/app"
-	"chatsockets/internal/interfaces/handlers"
-	"chatsockets/internal/services"
+	"chatsockets/internal/middleware"
 	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
+	"github.com/go-chi/chi"
 	"github.com/gorilla/websocket"
-)
-
-const (
-	MessageChannelCap = 10
-	MessageWorkersCap = 10
+	"go.uber.org/zap"
 )
 
 func main() {
-
+	//ДЛЯ ВЕБСОКЕТОВ
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true }, // Allow all connections
 	}
-
-	var rwMutext sync.RWMutex
-	var wg sync.WaitGroup
 	clients := make(map[*websocket.Conn]bool)
-	msgChannel := make(chan []byte, MessageChannelCap)
-	app := app.NewApp(msgChannel, &rwMutext, &wg)
 
+	//БАЗОВЫЙ ЛОГГЕР
+	logger := app.NewZapLogger()
+	defer logger.Sync()
+
+	//ГЛОБАЛЬНЫЙ ЛОГГЕР ПРИЛОЖЕНИЯ
+	appLogger := logger.Named("app")
+
+	//БАЗА ДАННЫХ
+	db, err := app.InitDb()
+	if err != nil {
+		appLogger.Error("не удалось подключиться к базе данных: ", zap.Error(err))
+		panic(err)
+	}
+	appLogger.Info("сервер подключен к базе данных", zap.Time("started", time.Now()))
+
+	//КОНТЕКСТ ДЛЯ GRACEFULL SHUTDOWN
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	for i := range MessageWorkersCap {
-		app.WG.Add(1)
-		go services.Worker(i, ctx, app.WG, app.MsgChannel, clients, app.RWMutext)
+	//ОСНОВНАЯ СУЩНОСТЬ ПРИЛОЖЕНИЯ DI
+	application := app.NewApplication(upgrader, clients, db, appLogger)
+	if application == nil {
+		appLogger.Error("не удалось инициализировать Application")
+		panic(fmt.Errorf("не удалось инициализировать Application"))
 	}
 
-	messageHandler := handlers.NewMessageHandler(upgrader, clients, app.MsgChannel, app.RWMutext, app.WG)
+	//Запускаем фоновые задачи(воркеров)
+	application.Start(&ctx, application.Cfg)
 
-	http.HandleFunc("/ws", messageHandler.GetAndPostMessage)
-	fmt.Println("WebSocket server started on :8080")
+	//ПОЛУЧАЕМ PUBLIC KEY JWT
+	publicKey, err := app.LoadRSAPublicKey(application.Cfg.JWTPublicKeyPath)
+	if err != nil {
+		appLogger.Error("не удалось загрузить public key: ", zap.Error(err))
+		panic(err)
+	}
+
+	//ИНИЦИАЛИЗИРУЕМ AUTH MIDDLEWARE
+	authMiddleware := middleware.NewJWTMiddleware(publicKey, application.Cfg.JWTIssuer, appLogger)
+
+	//ИНИЦИАЛИЗИРУЕМ И НАСТРАИВАЕМ РОУТЕР
+	router := chi.NewRouter()
+
+	app.RegisterRoutes(router, application.Instance, appLogger, authMiddleware)
 
 	server := &http.Server{
 		Addr:    ":8080",
-		Handler: nil,
+		Handler: router,
 	}
-
+	fmt.Println("WebSocket server started on :8080")
+	//ЗАПУСКАЕМ СЕРВЕР
 	go func() {
-		fmt.Println("Server starting on :8080")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
@@ -69,8 +90,8 @@ func main() {
 		log.Fatalf("Server Shutdown Failed:%+v", err)
 	}
 
-	close(app.MsgChannel)
-	wg.Wait()
+	close(application.MsgChannel)
+	application.WG.Wait()
 
 	fmt.Println("Server exited properly")
 }

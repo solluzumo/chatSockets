@@ -1,12 +1,13 @@
-package handlers
+package httpHandlers
 
 import (
-	"log"
+	"chatsockets/internal/domain"
+	"chatsockets/internal/services"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 const (
@@ -16,45 +17,38 @@ const (
 )
 
 type MessageHandler struct {
+	*ErrorHandler
 	upgrader   websocket.Upgrader
-	clients    map[*websocket.Conn]bool
-	msgChannel chan []byte
-	rwmut      *sync.RWMutex
-	wg         *sync.WaitGroup
+	msgChannel chan domain.MessageTask
+	messageHub services.MessageHub
+	apiLogger  *zap.Logger
 }
 
-func NewMessageHandler(upgrader websocket.Upgrader, clients map[*websocket.Conn]bool, msgChan chan []byte, rwmut *sync.RWMutex, wg *sync.WaitGroup) *MessageHandler {
+func NewMessageHandler(upgrader websocket.Upgrader, msgChan chan domain.MessageTask, mhub *services.MessageHub, appLogger *zap.Logger) *MessageHandler {
 	return &MessageHandler{
-		upgrader:   upgrader,
-		clients:    clients,
-		msgChannel: msgChan,
-		rwmut:      rwmut,
-		wg:         wg,
+		ErrorHandler: NewErrorHandler(appLogger),
+		upgrader:     upgrader,
+		msgChannel:   msgChan,
+		messageHub:   *mhub,
+		apiLogger:    appLogger.Named("message_websocket_api_http"),
 	}
 }
 
-func (mh *MessageHandler) deleteClient(rw *sync.RWMutex, client *websocket.Conn) {
-	rw.RLock()
-	defer rw.RUnlock()
-
-	delete(mh.clients, client)
-}
-
-func (mh *MessageHandler) GetAndPostMessage(w http.ResponseWriter, r *http.Request) {
-
+func (mh *MessageHandler) ConnectToChatWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := mh.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Ошибка при создании подключения%v", err)
+		mh.ErrorHandler.handleDomainError(w, err)
 		return
 	}
 
-	mh.clients[ws] = true
+	//Регестрируем новое подключение
+	mh.messageHub.Register(ws)
 
 	go mh.writePump(ws)
-	go mh.readPump(ws)
+	go mh.readPump(ws, r)
 }
 
-func (mh *MessageHandler) readPump(conn *websocket.Conn) {
+func (mh *MessageHandler) readPump(conn *websocket.Conn, r *http.Request) {
 	defer conn.Close()
 
 	//ставим дедлайн для проверки подключения
@@ -70,10 +64,16 @@ func (mh *MessageHandler) readPump(conn *websocket.Conn) {
 		// Читаем сообщение из сокета
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("read error: %v", err)
+			mh.apiLogger.Error("ошибка чтения из сокета: ", zap.Error(err))
 			break
 		}
-		mh.msgChannel <- message
+
+		messageTask := domain.MessageTask{
+			Ctx:  r.Context(),
+			Data: message,
+		}
+
+		mh.msgChannel <- messageTask
 	}
 
 }
@@ -84,17 +84,14 @@ func (mh *MessageHandler) writePump(conn *websocket.Conn) {
 	defer func() {
 		ticker.Stop()
 		conn.Close()
-		mh.deleteClient(mh.rwmut, conn)
+		mh.messageHub.Unregister(conn)
 	}()
 
-	for {
-		select {
-		case <-ticker.C:
-			if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
-				log.Printf("write control error: %v", err)
-				return
-			}
+	for range ticker.C {
+		if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
+			mh.apiLogger.Error("ошибка отправки пинга: ", zap.Error(err))
 
+			return
 		}
 	}
 }
