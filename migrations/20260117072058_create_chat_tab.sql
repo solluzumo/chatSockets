@@ -3,7 +3,7 @@
 SELECT 'up SQL query';
 CREATE TABLE chats (
     id SERIAL PRIMARY KEY,
-    title VARCHAR(200) NOT NULL,
+    title VARCHAR(200) UNIQUE NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

@@ -1,8 +1,10 @@
 package domain
 
-import "context"
+import (
+	"context"
+)
 
 type MessageTask struct {
 	Ctx  context.Context
-	Data []byte
+	Data *MessageDomain
 }

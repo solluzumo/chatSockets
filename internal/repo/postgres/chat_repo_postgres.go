@@ -6,23 +6,18 @@ import (
 	"chatsockets/internal/repo"
 	"context"
 	"errors"
+	"fmt"
 
-	"time"
-
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type ChatRepoPostgres struct {
-	db       *gorm.DB
-	dbLogger *zap.Logger
+	db *gorm.DB
 }
 
-func NewChatRepoPostgres(db *gorm.DB, appLogger *zap.Logger) *ChatRepoPostgres {
-	dbLogger := appLogger.Named("chat_db")
+func NewChatRepoPostgres(db *gorm.DB) *ChatRepoPostgres {
 	return &ChatRepoPostgres{
-		db:       db,
-		dbLogger: dbLogger,
+		db: db,
 	}
 }
 
@@ -33,13 +28,15 @@ func (cr *ChatRepoPostgres) Count(ctx context.Context) int64 {
 }
 
 func (cr *ChatRepoPostgres) CreateChat(ctx context.Context, data *domain.ChatDomain) (*domain.ChatDomain, error) {
-	chatModel := &models.Chat{
-		Title:     data.Title,
-		CreatedAt: time.Now(),
-	}
+	var err error
 
-	if err := cr.db.WithContext(ctx).Create(chatModel).Error; err != nil {
-		return data, err
+	chatModel := models.DomainToModelChat(data)
+
+	if err = cr.db.WithContext(ctx).Create(chatModel).Error; err != nil {
+		if IsUniqueViolation(err) {
+			err = domain.ErrChatAlreadyExists
+		}
+		return data, fmt.Errorf("не удалось создать чат: %w", err)
 	}
 
 	data.ID = chatModel.ID
@@ -52,7 +49,7 @@ func (cr *ChatRepoPostgres) FindChatById(ctx context.Context, data *domain.ChatD
 
 	err := cr.db.WithContext(ctx).First(&chatModel, data.ID).Error
 	if err != nil {
-		return err
+		return fmt.Errorf("не удалось найти чат:%w", err)
 	}
 
 	data.Title = chatModel.Title
@@ -68,7 +65,7 @@ func (cr *ChatRepoPostgres) ChatExists(ctx context.Context, param repo.FilterPar
 	chatModel := &models.Chat{}
 
 	if isFieldAllowed(param.Field) != nil {
-		return false, domain.ErrFieldIsNotAllowed
+		return false, fmt.Errorf("не удалось проверить существует ли чат: %w", domain.ErrFieldIsNotAllowed)
 	}
 
 	cr.db.WithContext(ctx).Model(chatModel).Where(param.Field+" = ?", param.Value).Count(&count)
@@ -77,7 +74,15 @@ func (cr *ChatRepoPostgres) ChatExists(ctx context.Context, param repo.FilterPar
 }
 
 func (cr *ChatRepoPostgres) DeleteChat(ctx context.Context, chatID int) error {
-	return cr.db.WithContext(ctx).Where("id = ?", chatID).Delete(&models.Chat{}).Error
+
+	result := cr.db.WithContext(ctx).Where("id = ?", chatID).Delete(&models.Chat{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrChatNotFound
+	}
+	return nil
 }
 
 func (cr *ChatRepoPostgres) IsUserConnectedToChat(ctx context.Context, chatID int, userID int) bool {

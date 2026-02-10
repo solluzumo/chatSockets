@@ -47,13 +47,13 @@ func NewAppInstance(
 	MsgChan chan domain.MessageTask) *AppInstance {
 
 	AppRepos := &AppRepos{
-		ChatRepo:    postgres.NewChatRepoPostgres(db, appLogger),
-		MessageRepo: postgres.NewMessageRepoPostgres(db, appLogger),
+		ChatRepo:    postgres.NewChatRepoPostgres(db),
+		MessageRepo: postgres.NewMessageRepoPostgres(db),
 	}
 
 	appServices := &AppServices{
 		MessageHub:  services.NewMessageHub(RWMutex, clients, WG, appLogger, AppRepos.MessageRepo, AppRepos.ChatRepo),
-		ChatService: services.NewChatService(AppRepos.MessageRepo, AppRepos.ChatRepo, appLogger),
+		ChatService: services.NewChatService(AppRepos.MessageRepo, AppRepos.ChatRepo),
 	}
 
 	appHandlers := &AppHandlers{

@@ -2,6 +2,7 @@ package httpHandlers
 
 import (
 	"chatsockets/internal/domain"
+	"chatsockets/internal/dto"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,31 @@ func NewErrorHandler(logger *zap.Logger) *ErrorHandler {
 	}
 }
 
+func (er *ErrorHandler) handleDomainErrorWS(send chan<- any, err error) {
+	var errString string
+	switch {
+	case errors.Is(err, domain.ErrChatNotFound):
+		errString = "Чат не найден"
+	case errors.Is(err, domain.ErrUserIsNotConnectedToChat):
+		errString = "пользователь не участник чата"
+	case errors.Is(err, domain.ErrBadJWT):
+		errString = "неверный jwt токен"
+	default:
+		errString = "Внутренняя ошибка сервера"
+	}
+	er.respondErrorWS(send, errString)
+}
+
+func (er *ErrorHandler) respondErrorWS(send chan<- any, err string) {
+	errorMsg := dto.WsErrorResponse{
+		Type:   "error",
+		Error:  "Не удалось подключиться к чату",
+		Reason: err,
+	}
+	send <- errorMsg
+
+}
+
 // respondError отправляет ошибку в формате JSON
 func (er *ErrorHandler) respondError(w http.ResponseWriter, message string, code int, err error) {
 	if err != nil {
@@ -39,8 +65,11 @@ func (er *ErrorHandler) handleDomainError(w http.ResponseWriter, err error) {
 		er.respondError(w, "чат не найден", http.StatusNotFound, err)
 	case errors.Is(err, domain.ErrChatAlreadyExists):
 		er.respondError(w, "чат с таким названием уже существует", http.StatusBadRequest, err)
+	case errors.Is(err, domain.ErrUserIsNotConnectedToChat):
+		er.respondError(w, "пользователь не участник чата", http.StatusBadRequest, err)
+	case errors.Is(err, domain.ErrFieldIsNotAllowed):
+		er.respondError(w, "не разрешенное для фильтрации поле", http.StatusBadRequest, err)
 	case errors.Is(err, context.Canceled):
-		// Клиент ушел, отвечать некому, просто логируем
 		er.apiLogger.Info("запрос отменён клиентом")
 	default:
 		er.apiLogger.Error("внутренняя ошибка сервера", zap.Error(err))

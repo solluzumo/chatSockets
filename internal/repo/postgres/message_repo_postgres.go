@@ -4,23 +4,20 @@ import (
 	"chatsockets/internal/domain"
 	"chatsockets/internal/models"
 	"context"
-
+	"errors"
+	"fmt"
 	"time"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type MessageRepoPostgres struct {
-	db       *gorm.DB
-	dbLogger *zap.Logger
+	db *gorm.DB
 }
 
-func NewMessageRepoPostgres(db *gorm.DB, appLogger *zap.Logger) *MessageRepoPostgres {
-	dbLogger := appLogger.Named("message_db")
+func NewMessageRepoPostgres(db *gorm.DB) *MessageRepoPostgres {
 	return &MessageRepoPostgres{
-		db:       db,
-		dbLogger: dbLogger,
+		db: db,
 	}
 }
 
@@ -31,44 +28,45 @@ func (mr *MessageRepoPostgres) Count(ctx context.Context) int64 {
 }
 
 func (mr *MessageRepoPostgres) CreateMessage(ctx context.Context, data *domain.MessageDomain) (*domain.MessageDomain, error) {
-	messageModel := &models.Message{}
+	var err error
 
-	messageModel.ChatID = data.ChatID
-	messageModel.Text = data.Text
+	messageModel := models.DomainToModelMessage(data)
+
 	messageModel.CreatedAt = time.Now()
 
-	if err := mr.db.WithContext(ctx).Create(messageModel).Error; err != nil {
-		return data, err
+	if err = mr.db.WithContext(ctx).Create(messageModel).Error; err != nil {
+		if pgErr, ok := IsForeignKeyViolation(err); ok {
+			return nil, MapFKConstraint(pgErr.ConstraintName)
+		}
+		return nil, fmt.Errorf("ошибка создания сообщения: %w", err)
 	}
-
-	mr.dbLogger.Info("Сообщение создано", zap.Int("message id", messageModel.ID))
 
 	data.ID = messageModel.ChatID
 
 	return data, nil
 }
 
-func (mr *MessageRepoPostgres) GetMessagesByChatWithLimit(ctx context.Context, chatID int, limit int) []*domain.MessageDomain {
+func (mr *MessageRepoPostgres) GetMessagesByChatWithLimit(ctx context.Context, chatID int, limit int) ([]*domain.MessageDomain, error) {
 	var messageModels []*models.Message
 
-	var messageDomains []*domain.MessageDomain
-
 	if err := mr.db.WithContext(ctx).Order("created_at DESC").Limit(limit).Find(&messageModels).Error; err != nil {
-		return nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("не удалось получить сообщения из чата: %w", domain.ErrChatNotFound)
+		}
+		return nil, fmt.Errorf("не удалось получить сообщения из чата: %w", err)
 	}
+	messageDomains := models.ModelSliceToDomainSlice(messageModels)
 
-	for _, el := range messageModels {
-		messageDomains = append(messageDomains, &domain.MessageDomain{
-			ID:        el.ID,
-			ChatID:    el.ChatID,
-			Text:      el.Text,
-			CreatedAt: el.CreatedAt,
-		})
-	}
-
-	return messageDomains
+	return messageDomains, nil
 }
 
 func (mr *MessageRepoPostgres) DeleteMessages(ctx context.Context, chatID int) error {
-	return mr.db.WithContext(ctx).Where("chat_id = ?", chatID).Delete(&models.Message{}).Error
+	var err error
+	if err = mr.db.WithContext(ctx).Where("chat_id = ?", chatID).Delete(&models.Message{}).Error; err != nil {
+		if IsUniqueViolation(err) {
+			err = domain.ErrMessageNotFound
+		}
+		return fmt.Errorf("не удалось удалить сообщение: %w", err)
+	}
+	return nil
 }

@@ -1,12 +1,22 @@
 package dto
 
 import (
+	"chatsockets/internal/domain"
 	"errors"
 	"strings"
 )
 
 type CreateChatRequest struct {
 	Title string `json:"title"`
+}
+
+func (req *CreateChatRequest) ToDomain() (*domain.ChatDomain, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+	return &domain.ChatDomain{
+		Title: req.Title,
+	}, nil
 }
 
 func (req *CreateChatRequest) Validate() error {
