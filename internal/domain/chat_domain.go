@@ -5,8 +5,10 @@ import (
 )
 
 type ChatDomain struct {
-	ID        int
-	Title     string
-	CreatedAt time.Time
-	Messages  []*MessageDomain
+	ID         int
+	Title      string
+	CreatedAt  time.Time
+	ChatStatus ChatStatus
+	Messages   []*MessageDomain
+	Users      []*UserChatLinkDomain
 }

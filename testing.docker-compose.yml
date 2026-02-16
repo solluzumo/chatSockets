@@ -2,9 +2,9 @@ services:
   messanger-postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: messanger_user
-      POSTGRES_PASSWORD: messanger_password
-      POSTGRES_DB: messanger_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: mdb
     ports:
       - "5433:5432"
     volumes:
@@ -12,7 +12,7 @@ services:
       
     networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U messanger_user -d messanger_db"]
+      test: ["CMD-SHELL","pg_isready -U user -d mdb"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -21,7 +21,7 @@ services:
       context: .
       dockerfile: DOCKERFILE
     environment:
-      DATABASE_URL: postgres://messanger_user:messanger_password@messanger-postgres:5432/messanger_db?sslmode=disable
+      DATABASE_URL: postgres://user:pass@messanger-postgres:5432/mdb?sslmode=disable
       SERVICE_NAME : "messanger"
       WORKERS_TIMER: 5
       HTTP_PORT: "8080"

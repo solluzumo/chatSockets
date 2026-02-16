@@ -136,7 +136,7 @@
         }
         
         function openWebSocketConnection(chatId) {
-            const token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJzdWIiOiIxIiwiZXhwIjoxNzcwNzMwNDI4LCJpYXQiOjE3NzA2NDQwMjh9.fuGFoCXCU-4mgTo7TgcP-YIOqyJCL9X__jy1qfeqbU7LMo7dyxG1U_P5XUdel2MYDtxnvB7zasuVy8Xh7DuSYJ9FE81oxd1GTBIw5KpEA_C_waGXK3yuN8VtRZikTBU0dHA724cNJ80LIoEkSrS8o03xPzD08emmvtuy2MTgwiK3wH0rMW1dIz-RC0VwwVSrXvu76j5MbxHRlGQU4P6Oc2JMIjKm04DL1Z-xvBtl53KiMwsJ-AoObIZb9PdpFl8Bg7ZwnGZFxdfKI7UwuPvfYgSBZc9yu5_9dsZNGuE29VDeZ38u2UcXbCTlQ209iICH-pA0Fz6C-sXQFbxLUsTyOw";
+            const token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJzdWIiOiIxIiwiZXhwIjoxNzgxNTAzODA0LCJpYXQiOjE3NzExMzU4MDR9.jzbyopntAtFVNIb5CGOppwiHIHMiL3s2CEwmCSsSzu83ITYe-8aspXGWEynqlkXtAI9cIYaFfLQzwJ_SsCNFbbXHSLpt9u0D3tqtAzdBr-nzT2-UWZVvKM7hNjVAjpObkubJc3sDDFeMJPRfYO4eNqyFVvWWGvZcApqRVvrJAGbfRp2QRIMqwW_O9UQ6YhWhLtkVyU2lLjW5dsDh0HvWIWEHLRLRLebVN51cJz3j6V-v1xwQiRmMpdsU_attnM5xCLhsCMDZLbYeHmY3F1dF8_qOUKDr0DDrjkLCAIlGOYNUk8tqqigZ2a_uo-zizcX7o9Km18qE2UYX5JGTk3lsaQ";
             // Закрываем предыдущее соединение
             if (socket) {
                 socket.close();
@@ -189,7 +189,7 @@
         function loadChatHistory(chatId, limit) {
             return fetch(`http://localhost:8080/chats/${chatId}?limit=${limit}`, {
                 headers: {
-                    "Authorization": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJzdWIiOiIxIiwiZXhwIjoxNzcwNzMwNDI4LCJpYXQiOjE3NzA2NDQwMjh9.fuGFoCXCU-4mgTo7TgcP-YIOqyJCL9X__jy1qfeqbU7LMo7dyxG1U_P5XUdel2MYDtxnvB7zasuVy8Xh7DuSYJ9FE81oxd1GTBIw5KpEA_C_waGXK3yuN8VtRZikTBU0dHA724cNJ80LIoEkSrS8o03xPzD08emmvtuy2MTgwiK3wH0rMW1dIz-RC0VwwVSrXvu76j5MbxHRlGQU4P6Oc2JMIjKm04DL1Z-xvBtl53KiMwsJ-AoObIZb9PdpFl8Bg7ZwnGZFxdfKI7UwuPvfYgSBZc9yu5_9dsZNGuE29VDeZ38u2UcXbCTlQ209iICH-pA0Fz6C-sXQFbxLUsTyOw"
+                    "Authorization": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhdXRoLXNlcnZpY2UiLCJzdWIiOiIxIiwiZXhwIjoxNzgxNTAzODA0LCJpYXQiOjE3NzExMzU4MDR9.jzbyopntAtFVNIb5CGOppwiHIHMiL3s2CEwmCSsSzu83ITYe-8aspXGWEynqlkXtAI9cIYaFfLQzwJ_SsCNFbbXHSLpt9u0D3tqtAzdBr-nzT2-UWZVvKM7hNjVAjpObkubJc3sDDFeMJPRfYO4eNqyFVvWWGvZcApqRVvrJAGbfRp2QRIMqwW_O9UQ6YhWhLtkVyU2lLjW5dsDh0HvWIWEHLRLRLebVN51cJz3j6V-v1xwQiRmMpdsU_attnM5xCLhsCMDZLbYeHmY3F1dF8_qOUKDr0DDrjkLCAIlGOYNUk8tqqigZ2a_uo-zizcX7o9Km18qE2UYX5JGTk3lsaQ"
                 }
             })
             .then(response => {

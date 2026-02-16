@@ -1,10 +1,11 @@
 package app
 
 import (
-	"chatsockets/internal/domain"
+	"chatsockets/internal/events"
 	httpHandlers "chatsockets/internal/interfaces/handlers"
 	"chatsockets/internal/repo/postgres"
 	"chatsockets/internal/services"
+	websockets "chatsockets/internal/ws"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -15,20 +16,21 @@ import (
 type AppHandlers struct {
 	MessageHandler *httpHandlers.MessageHandler
 	ChatHandler    *httpHandlers.ChatHandler
+	LinkHandler    *httpHandlers.LinkHandler
 }
 
 type AppServices struct {
-	MessageHub  *services.MessageHub
-	ChatService *services.ChatService
+	PermissionService *services.PermissionService
+	MessageHub        *websockets.MessageHub
+	MessageService    *services.MessageService
+	ChatService       *services.ChatService
+	LinkService       *services.LinkService
 }
 
 type AppRepos struct {
 	ChatRepo    *postgres.ChatRepoPostgres
 	MessageRepo *postgres.MessageRepoPostgres
-}
-
-func NewAppRepos() *AppRepos {
-	return &AppRepos{}
+	LinkRepo    *postgres.LinkPostgresRepo
 }
 
 type AppInstance struct {
@@ -44,26 +46,35 @@ func NewAppInstance(
 	appLogger *zap.Logger,
 	RWMutex *sync.RWMutex,
 	WG *sync.WaitGroup,
-	MsgChan chan domain.MessageTask) *AppInstance {
+	MsgChan chan events.MessageCreatedEvent) *AppInstance {
 
-	AppRepos := &AppRepos{
+	eventBus := events.NewEventBus()
+
+	appRepos := &AppRepos{
 		ChatRepo:    postgres.NewChatRepoPostgres(db),
 		MessageRepo: postgres.NewMessageRepoPostgres(db),
+		LinkRepo:    postgres.NewLinkPostgresRepo(db),
 	}
 
+	permissionService := services.NewPermissionService(appRepos.LinkRepo)
+
 	appServices := &AppServices{
-		MessageHub:  services.NewMessageHub(RWMutex, clients, WG, appLogger, AppRepos.MessageRepo, AppRepos.ChatRepo),
-		ChatService: services.NewChatService(AppRepos.MessageRepo, AppRepos.ChatRepo),
+		PermissionService: permissionService,
+		MessageHub:        websockets.NewMessageHub(WG, appLogger, eventBus),
+		MessageService:    services.NewMessageService(appRepos.MessageRepo, appRepos.ChatRepo, appRepos.LinkRepo, eventBus, permissionService),
+		ChatService:       services.NewChatService(appRepos.MessageRepo, appRepos.ChatRepo, appRepos.LinkRepo, permissionService),
+		LinkService:       services.NewLinkService(appRepos.LinkRepo, permissionService),
 	}
 
 	appHandlers := &AppHandlers{
-		MessageHandler: httpHandlers.NewMessageHandler(upgrader, MsgChan, appServices.MessageHub, appLogger),
+		MessageHandler: httpHandlers.NewMessageHandler(upgrader, appServices.MessageService, appLogger, appServices.MessageHub),
 		ChatHandler:    httpHandlers.NewChatAPIHTTP(appServices.ChatService, appLogger),
+		LinkHandler:    httpHandlers.NewLinkAPIHTTP(appServices.LinkService, appLogger),
 	}
 
 	return &AppInstance{
 		Handlers: appHandlers,
 		Services: appServices,
-		Repos:    AppRepos,
+		Repos:    appRepos,
 	}
 }

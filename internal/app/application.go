@@ -1,7 +1,7 @@
 package app
 
 import (
-	"chatsockets/internal/domain"
+	"chatsockets/internal/events"
 	"context"
 	"sync"
 
@@ -11,7 +11,7 @@ import (
 )
 
 type Application struct {
-	MsgChannel chan domain.MessageTask
+	MsgChannel chan events.MessageCreatedEvent
 	RWMutext   *sync.RWMutex
 	WG         *sync.WaitGroup
 	Instance   *AppInstance
@@ -31,7 +31,7 @@ func NewApplication(
 	if cfg == nil {
 		return nil
 	}
-	msgChannel := make(chan domain.MessageTask, cfg.MessageChannelCap)
+	msgChannel := make(chan events.MessageCreatedEvent, cfg.MessageChannelCap)
 
 	return &Application{
 		MsgChannel: msgChannel,
@@ -46,6 +46,6 @@ func (a *Application) Start(ctx *context.Context, cfg *Config) {
 	//ВОРКЕРЫ
 	for i := range a.Cfg.MessageWorkersCap {
 		a.WG.Add(1)
-		go a.Instance.Services.MessageHub.MessageWorker(i, *ctx, a.MsgChannel)
+		go a.Instance.Services.MessageHub.MessageWorker(i, *ctx)
 	}
 }

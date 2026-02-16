@@ -8,40 +8,51 @@ import (
 )
 
 type ChatService struct {
-	chatRepo    repo.ChatRepostiory
-	messageRepo repo.MessageRepostiory
+	permissionService *PermissionService
+	cRepo             repo.ChatRepostiory
+	mRepo             repo.MessageRepostiory
+	lRepo             repo.LinkRepository
 }
 
-func NewChatService(mRepo repo.MessageRepostiory, cRepo repo.ChatRepostiory) *ChatService {
+func NewChatService(mRepo repo.MessageRepostiory, cRepo repo.ChatRepostiory, lRepo repo.LinkRepository, pService *PermissionService) *ChatService {
 	return &ChatService{
-		chatRepo:    cRepo,
-		messageRepo: mRepo,
+		cRepo:             cRepo,
+		mRepo:             mRepo,
+		lRepo:             lRepo,
+		permissionService: pService,
 	}
 }
 
-func (cs *ChatService) ChatExists(ctx context.Context, param repo.FilterParam) (bool, error) {
-	return cs.chatRepo.ChatExists(ctx, param)
-}
+func (cs *ChatService) CreateChat(ctx context.Context, chat *domain.ChatDomain, userID int) error {
 
-func (cs *ChatService) CreateChat(ctx context.Context, chat *domain.ChatDomain) (*domain.ChatDomain, error) {
-
-	chat, err := cs.chatRepo.CreateChat(ctx, chat)
+	//Создаём чат
+	err := cs.cRepo.CreateChat(ctx, chat)
 	if err != nil {
-		return nil, fmt.Errorf("не удалось создать чат: %w", err)
+		return fmt.Errorf("не удалось создать чат: %w", err)
 	}
 
-	return chat, nil
+	//Создаём связь пользователь-чат
+	linkDomain := &domain.UserChatLinkDomain{
+		UserID:      userID,
+		ChatID:      chat.ID,
+		UserBlocked: false,
+		UserRole:    domain.AdminRole,
+	}
+
+	if err := cs.lRepo.CreateLink(ctx, linkDomain); err != nil {
+		return fmt.Errorf("не удалось привязать пользователя к чату: %w", err)
+	}
+	return nil
 }
 
 func (cs *ChatService) GetChatById(ctx context.Context, chatID int, limit int) (*domain.ChatDomain, error) {
-	chatDomain := &domain.ChatDomain{
-		ID: chatID,
-	}
-	if err := cs.chatRepo.FindChatById(ctx, chatDomain); err != nil {
+
+	chatDomain, err := cs.cRepo.GetChatWithUsers(ctx, chatID)
+	if err != nil {
 		return nil, fmt.Errorf("не удалось найти чат: %w", domain.ErrChatNotFound)
 	}
 
-	messages, err := cs.messageRepo.GetMessagesByChatWithLimit(ctx, chatDomain.ID, limit)
+	messages, err := cs.mRepo.GetMessagesByChatWithLimit(ctx, chatDomain.ID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("не удалось получить сообщения чата: %w", err)
 	}
@@ -53,20 +64,9 @@ func (cs *ChatService) GetChatById(ctx context.Context, chatID int, limit int) (
 
 func (cs *ChatService) DeleteChatByID(ctx context.Context, chatID int) error {
 
-	if err := cs.chatRepo.DeleteChat(ctx, chatID); err != nil {
+	if err := cs.cRepo.DeleteChat(ctx, chatID); err != nil {
 		return fmt.Errorf("не удалось удалить чат по id: %w", err)
 	}
 
 	return nil
-}
-
-func (cs *ChatService) SendMessage(ctx context.Context, message *domain.MessageDomain) (*domain.MessageDomain, error) {
-
-	//создаём сообщение
-	message, err := cs.messageRepo.CreateMessage(ctx, message)
-	if err != nil {
-		return nil, fmt.Errorf("не удалось отправить сообщение: %w", err)
-	}
-
-	return message, nil
 }

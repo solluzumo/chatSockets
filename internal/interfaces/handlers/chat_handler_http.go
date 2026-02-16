@@ -1,7 +1,9 @@
 package httpHandlers
 
 import (
+	"chatsockets/internal/domain"
 	"chatsockets/internal/dto"
+	"chatsockets/internal/middleware"
 	"chatsockets/internal/services"
 	"net/http"
 
@@ -22,6 +24,7 @@ func NewChatAPIHTTP(mService *services.ChatService, appLogger *zap.Logger) *Chat
 
 // Создать чат
 func (ch *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req dto.CreateChatRequest
 	if err := ch.decodeJSON(r, &req); err != nil {
 		ch.handleDomainError(w, err)
@@ -34,13 +37,19 @@ func (ch *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := ch.chatService.CreateChat(r.Context(), chatDomain)
-	if err != nil {
+	userID, ok := middleware.UserIDFromContext(ctx)
+	if !ok {
+		ch.apiLogger.Warn("ошибка получения id пользователя из контекста")
+		ch.handleDomainError(w, domain.ErrBadJWT)
+		return
+	}
+
+	if err := ch.chatService.CreateChat(ctx, chatDomain, userID); err != nil {
 		ch.handleDomainError(w, err)
 		return
 	}
 
-	response := dto.ToCreateChatResponse(result)
+	response := dto.ToCreateChatResponse(chatDomain)
 
 	ch.respondJSON(w, http.StatusCreated, response)
 }
@@ -48,7 +57,7 @@ func (ch *ChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 // Получить чат и limit сообщений
 func (ch *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 
-	id, err := ch.parseID(r)
+	chatID, err := ch.parseID(r)
 	if err != nil {
 		ch.handleDomainError(w, err)
 		return
@@ -56,7 +65,7 @@ func (ch *ChatHandler) GetChat(w http.ResponseWriter, r *http.Request) {
 
 	limit := ch.parseLimit(r)
 
-	result, err := ch.chatService.GetChatById(r.Context(), id, limit)
+	result, err := ch.chatService.GetChatById(r.Context(), chatID, limit)
 	if err != nil {
 		ch.handleDomainError(w, err)
 		return

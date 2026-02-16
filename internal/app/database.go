@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"time"
 
 	// Обязательный импорт для регистрации драйвера "postgres"
 	_ "github.com/lib/pq"
@@ -37,6 +38,21 @@ func InitDb() (*gorm.DB, error) {
 	// 3. Инициализируем GORM
 	gormDB, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
 	if err != nil {
+		return nil, err
+	}
+
+	sqldb, err := gormDB.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	// Настраиваем пул соединений
+	sqldb.SetMaxIdleConns(25)
+	sqldb.SetMaxOpenConns(25)
+	sqldb.SetConnMaxLifetime(time.Hour)
+
+	// Пингуем бд для проверки
+	if err := sqldb.Ping(); err != nil {
 		return nil, err
 	}
 

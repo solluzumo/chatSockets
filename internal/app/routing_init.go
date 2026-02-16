@@ -17,6 +17,9 @@ func RegisterRoutes(r chi.Router, app *AppInstance, appLogger *zap.Logger, authM
 				r.Post("/", app.Handlers.ChatHandler.CreateChat)
 				r.Delete("/{id}", app.Handlers.ChatHandler.DeleteChat)
 				r.Get("/{id}", app.Handlers.ChatHandler.GetChat)
+				r.Post("/{id}/subscribe", app.Handlers.LinkHandler.SubscribeToChat)
+				r.Post("/{id}/update-role", app.Handlers.LinkHandler.UpdateUserRole)
+				r.Post("/{id}/add", app.Handlers.LinkHandler.AddUserToChat)
 			})
 		})
 

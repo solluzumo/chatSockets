@@ -41,7 +41,7 @@ func (mr *MessageRepoPostgres) CreateMessage(ctx context.Context, data *domain.M
 		return nil, fmt.Errorf("ошибка создания сообщения: %w", err)
 	}
 
-	data.ID = messageModel.ChatID
+	data.ID = messageModel.ID
 
 	return data, nil
 }

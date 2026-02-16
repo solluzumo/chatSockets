@@ -2,7 +2,6 @@ package httpHandlers
 
 import (
 	"chatsockets/internal/domain"
-	"chatsockets/internal/dto"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,31 +20,6 @@ func NewErrorHandler(logger *zap.Logger) *ErrorHandler {
 	return &ErrorHandler{
 		apiLogger: logger,
 	}
-}
-
-func (er *ErrorHandler) handleDomainErrorWS(send chan<- any, err error) {
-	var errString string
-	switch {
-	case errors.Is(err, domain.ErrChatNotFound):
-		errString = "Чат не найден"
-	case errors.Is(err, domain.ErrUserIsNotConnectedToChat):
-		errString = "пользователь не участник чата"
-	case errors.Is(err, domain.ErrBadJWT):
-		errString = "неверный jwt токен"
-	default:
-		errString = "Внутренняя ошибка сервера"
-	}
-	er.respondErrorWS(send, errString)
-}
-
-func (er *ErrorHandler) respondErrorWS(send chan<- any, err string) {
-	errorMsg := dto.WsErrorResponse{
-		Type:   "error",
-		Error:  "Не удалось подключиться к чату",
-		Reason: err,
-	}
-	send <- errorMsg
-
 }
 
 // respondError отправляет ошибку в формате JSON
@@ -69,6 +43,12 @@ func (er *ErrorHandler) handleDomainError(w http.ResponseWriter, err error) {
 		er.respondError(w, "пользователь не участник чата", http.StatusBadRequest, err)
 	case errors.Is(err, domain.ErrFieldIsNotAllowed):
 		er.respondError(w, "не разрешенное для фильтрации поле", http.StatusBadRequest, err)
+	case errors.Is(err, domain.ErrUserAlreadySubscribed):
+		er.respondError(w, "пользователь уже подписан на чат", http.StatusBadRequest, err)
+	case errors.Is(err, domain.ErrBadRequest):
+		er.respondError(w, "плохой запрос", http.StatusBadRequest, err)
+	case errors.Is(err, domain.ErrNoChanges):
+		er.respondJSON(w, http.StatusNotModified, nil)
 	case errors.Is(err, context.Canceled):
 		er.apiLogger.Info("запрос отменён клиентом")
 	default:
@@ -81,12 +61,12 @@ func (er *ErrorHandler) handleDomainError(w http.ResponseWriter, err error) {
 func (er *ErrorHandler) parseID(r *http.Request) (int, error) {
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
-		return 0, errors.New("chatID отсутствует")
+		return 0, errors.New("id отсутствует")
 	}
 
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id < 0 {
-		return 0, errors.New("chatID должен быть положительным числом")
+		return 0, errors.New("id должен быть положительным числом")
 	}
 	return id, nil
 }

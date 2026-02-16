@@ -3,10 +3,10 @@ package postgres
 import (
 	"chatsockets/internal/domain"
 	"chatsockets/internal/models"
-	"chatsockets/internal/repo"
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -27,48 +27,71 @@ func (cr *ChatRepoPostgres) Count(ctx context.Context) int64 {
 	return count
 }
 
-func (cr *ChatRepoPostgres) CreateChat(ctx context.Context, data *domain.ChatDomain) (*domain.ChatDomain, error) {
+func (cr *ChatRepoPostgres) CreateChat(ctx context.Context, data *domain.ChatDomain) error {
 	var err error
 
-	chatModel := models.DomainToModelChat(data)
+	data.CreatedAt = time.Now()
+
+	chatModel := models.ToModelChat(data)
 
 	if err = cr.db.WithContext(ctx).Create(chatModel).Error; err != nil {
 		if IsUniqueViolation(err) {
 			err = domain.ErrChatAlreadyExists
 		}
-		return data, fmt.Errorf("не удалось создать чат: %w", err)
+		return fmt.Errorf("не удалось создать чат: %w", err)
 	}
-
-	data.ID = chatModel.ID
-
-	return data, nil
-}
-
-func (cr *ChatRepoPostgres) FindChatById(ctx context.Context, data *domain.ChatDomain) error {
-	chatModel := &models.Chat{}
-
-	err := cr.db.WithContext(ctx).First(&chatModel, data.ID).Error
-	if err != nil {
-		return fmt.Errorf("не удалось найти чат:%w", err)
-	}
-
-	data.Title = chatModel.Title
 
 	data.ID = chatModel.ID
 
 	return nil
 }
 
-func (cr *ChatRepoPostgres) ChatExists(ctx context.Context, param repo.FilterParam) (bool, error) {
-	var count int64
-
-	chatModel := &models.Chat{}
-
-	if isFieldAllowed(param.Field) != nil {
-		return false, fmt.Errorf("не удалось проверить существует ли чат: %w", domain.ErrFieldIsNotAllowed)
+func (cr *ChatRepoPostgres) GetChatWithUsers(ctx context.Context, chatID int) (*domain.ChatDomain, error) {
+	// Сначала достаём чат
+	var chat models.Chat
+	if err := cr.db.WithContext(ctx).First(&chat, chatID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("чат с ID %d не найден", chatID)
+		}
+		return nil, fmt.Errorf("ошибка при получении чата: %w", err)
 	}
 
-	cr.db.WithContext(ctx).Model(chatModel).Where(param.Field+" = ?", param.Value).Count(&count)
+	// Потом всех участников
+	var userLinks []models.UserChatLink
+	if err := cr.db.WithContext(ctx).
+		Where("chat_id = ?", chatID).
+		Find(&userLinks).Error; err != nil {
+		return nil, fmt.Errorf("ошибка при получении участников чата: %w", err)
+	}
+
+	// Маппим в доменную модель
+	chatDomain := &domain.ChatDomain{
+		ID:         chat.ID,
+		Title:      chat.Title,
+		CreatedAt:  chat.CreatedAt,
+		ChatStatus: chat.ChatStatus,
+		Users:      make([]*domain.UserChatLinkDomain, len(userLinks)),
+	}
+
+	for i, u := range userLinks {
+		chatDomain.Users[i] = &domain.UserChatLinkDomain{
+			UserID:      u.UserID,
+			ChatID:      u.ChatID,
+			UserBlocked: u.UserBlocked,
+			UserRole:    u.UserRole,
+			CreatedAt:   u.CreatedAt,
+		}
+	}
+
+	return chatDomain, nil
+}
+
+func (cr *ChatRepoPostgres) ChatExists(ctx context.Context, chatDomain *domain.ChatDomain) (bool, error) {
+	var count int64
+
+	chatModel := models.ToModelChat(chatDomain)
+
+	cr.db.WithContext(ctx).Model(chatModel).Where(chatModel).Count(&count)
 
 	return count > 0, nil
 }
@@ -85,9 +108,7 @@ func (cr *ChatRepoPostgres) DeleteChat(ctx context.Context, chatID int) error {
 	return nil
 }
 
-func (cr *ChatRepoPostgres) IsUserConnectedToChat(ctx context.Context, chatID int, userID int) bool {
-	return true
-}
+// ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
 
 func isFieldAllowed(field string) error {
 	allowedFields := map[string]bool{

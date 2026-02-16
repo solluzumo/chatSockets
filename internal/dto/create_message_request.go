@@ -13,8 +13,8 @@ type CreateMessageRequest struct {
 	ChatID   string `json:"chatid"`
 }
 
-func (req *CreateMessageRequest) ToDomain() (*domain.MessageDomain, error) {
-	if err := req.Validate(); err != nil {
+func (req *CreateMessageRequest) ToDomain(userID int) (*domain.MessageDomain, error) {
+	if err := req.Validate(userID); err != nil {
 		return nil, err
 	}
 
@@ -27,16 +27,20 @@ func (req *CreateMessageRequest) ToDomain() (*domain.MessageDomain, error) {
 		Text:     req.Text,
 		UserName: req.UserName,
 		ChatID:   uChatId,
+		UserID:   userID,
 	}, nil
 }
 
-func (req *CreateMessageRequest) Validate() error {
+func (req *CreateMessageRequest) Validate(userID int) error {
 	req.Text = strings.TrimSpace(req.Text)
 	if req.Text == "" {
 		return errors.New("text не может быть пустым")
 	}
 	if len(req.Text) > 5000 {
 		return errors.New("text слишком длинный(5000 максимум)")
+	}
+	if userID < 0 {
+		return errors.New("юзер id не может быть меньше 0")
 	}
 	return nil
 }
